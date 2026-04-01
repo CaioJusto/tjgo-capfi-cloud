@@ -40,7 +40,7 @@ class JobCreateNome(JobCreateBase):
 class JobCreateCombinada(JobCreateBase):
     job_type: Literal[JobType.COMBINADA]
     nome: str = Field(min_length=1)
-    serventia_id: str = Field(min_length=1)
+    serventia_id: str | None = None
     cpf: str | None = None
     serventia_nome: str | None = None
 

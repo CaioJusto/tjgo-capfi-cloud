@@ -118,12 +118,14 @@ export default function DashboardPage({ user, onLogout, onEditCredentials }: { u
               {(jobType === 'serventia' || jobType === 'combinada') && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">ID da Serventia</label>
-                    <input type="text" required value={formData.serventia_id || ''} onChange={e => setFormData({...formData, serventia_id: e.target.value})}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      ID da Serventia {jobType === 'combinada' && <span className="text-gray-400 font-normal">(opcional)</span>}
+                    </label>
+                    <input type="text" required={jobType === 'serventia'} value={formData.serventia_id || ''} onChange={e => setFormData({...formData, serventia_id: e.target.value})}
                       placeholder="Ex: 123" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Serventia</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Serventia <span className="text-gray-400 font-normal">(opcional)</span></label>
                     <input type="text" value={formData.serventia_nome || ''} onChange={e => setFormData({...formData, serventia_nome: e.target.value})}
                       placeholder="Ex: 1ª Vara Civil" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
