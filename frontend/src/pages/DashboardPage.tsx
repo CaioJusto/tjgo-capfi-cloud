@@ -110,7 +110,7 @@ export default function DashboardPage({ user, onLogout, onEditCredentials }: { u
               )}
               {jobType === 'nome' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">CPF/CNPJ (opcional)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">CPF/CNPJ <span className="text-gray-400 font-normal">(opcional)</span></label>
                   <input type="text" value={formData.cpf || ''} onChange={e => setFormData({...formData, cpf: e.target.value})}
                     placeholder="00000000000" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
@@ -131,6 +131,19 @@ export default function DashboardPage({ user, onLogout, onEditCredentials }: { u
                   </div>
                 </div>
               )}
+              {jobType !== 'planilha' && (
+                <div className="w-32">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Página inicial <span className="text-gray-400 font-normal">(retomar)</span>
+                  </label>
+                  <input
+                    type="number" min={1} value={formData.pagina_inicial || 1}
+                    onChange={e => setFormData({...formData, pagina_inicial: Math.max(1, parseInt(e.target.value) || 1)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
+
               {jobType === 'planilha' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Arquivo Excel (.xlsx)</label>

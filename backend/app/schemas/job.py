@@ -29,12 +29,14 @@ class JobCreateServentia(JobCreateBase):
     job_type: Literal[JobType.SERVENTIA]
     serventia_id: str = Field(min_length=1)
     serventia_nome: str | None = None
+    pagina_inicial: int = Field(default=1, ge=1)
 
 
 class JobCreateNome(JobCreateBase):
     job_type: Literal[JobType.NOME]
     nome: str = Field(min_length=1)
     cpf: str | None = None
+    pagina_inicial: int = Field(default=1, ge=1)
 
 
 class JobCreateCombinada(JobCreateBase):
@@ -43,6 +45,7 @@ class JobCreateCombinada(JobCreateBase):
     serventia_id: str | None = None
     cpf: str | None = None
     serventia_nome: str | None = None
+    pagina_inicial: int = Field(default=1, ge=1)
 
 
 JobCreate = Annotated[
