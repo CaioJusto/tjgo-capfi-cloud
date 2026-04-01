@@ -177,6 +177,7 @@ def _search_process(
     cpf: str | None = None,
     serventia_id: str | None = None,
     serventia_nome: str | None = None,
+    pagina_inicial: int = 1,
 ) -> list[dict[str, Any]]:
     sb.wait_for_ready_state_complete()
 
@@ -204,7 +205,12 @@ def _search_process(
 
     sb.click("#btnBuscar")
     sb.sleep(2)
-    return _extract_results_from_page(sb, process_number, nome, cpf, serventia_nome)
+
+    # Busca por número de processo é pontual; demais modos podem ter múltiplas páginas
+    if process_number:
+        return _extract_results_from_page(sb, process_number, nome, cpf, serventia_nome)
+
+    return _extract_paginated_results(sb, nome, cpf, serventia_nome, pagina_inicial)
 
 
 def _fill_process_number_if_available(sb: Any, process_number: str) -> None:
@@ -219,6 +225,66 @@ def _fill_process_number_if_available(sb: Any, process_number: str) -> None:
             sb.clear(selector)
             sb.type(selector, process_number)
             return
+
+
+def _extract_paginated_results(
+    sb: Any,
+    nome: str | None,
+    cpf: str | None,
+    serventia_nome: str | None,
+    pagina_inicial: int,
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+
+    try:
+        total_text = sb.execute_script("""
+            return (function(){
+                var match = document.body.textContent.match(/Total de:\\s*([\\d.]+)/);
+                return match ? match[1] : '0';
+            })()
+        """)
+        total_processos = int(str(total_text).replace('.', '') or '0')
+    except Exception:
+        total_processos = 0
+
+    processos_por_pagina = 15
+    total_paginas = max(1, (total_processos + processos_por_pagina - 1) // processos_por_pagina) if total_processos else 1
+
+    if pagina_inicial > 1:
+        try:
+            sb.execute_script(f"""
+                var input = document.querySelector('input[name="PosicaoPaginaAtual"]');
+                if(input) input.value = '{pagina_inicial - 1}';
+                var btns = document.querySelectorAll('.Paginacao input[value="Ir"]');
+                if(btns.length > 0) btns[0].click();
+            """)
+            sb.sleep(2)
+        except Exception:
+            pass
+
+    pagina_atual = max(1, pagina_inicial)
+    while pagina_atual <= total_paginas:
+        page_records = _extract_results_from_page(sb, None, nome, cpf, serventia_nome)
+        if page_records:
+            results.extend(page_records)
+
+        if pagina_atual >= total_paginas:
+            break
+
+        try:
+            sb.execute_script(f"""
+                var input = document.querySelector('input[name="PosicaoPaginaAtual"]');
+                if(input) input.value = '{pagina_atual}';
+                var btns = document.querySelectorAll('.Paginacao input[value="Ir"]');
+                if(btns.length > 0) btns[0].click();
+            """)
+            sb.sleep(2)
+        except Exception:
+            break
+
+        pagina_atual += 1
+
+    return results
 
 
 def _extract_results_from_page(
