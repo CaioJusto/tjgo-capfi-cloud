@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.credentials import router as credentials_router
 from app.api.jobs import router as jobs_router
 from app.api.upload import router as upload_router
 from app.core.config import get_settings
@@ -26,13 +27,14 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title=settings.app_name, debug=settings.debug, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_allow_origins,
-    allow_credentials=True,
-    allow_methods=settings.cors_allow_methods,
-    allow_headers=settings.cors_allow_headers,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(auth_router)
+app.include_router(credentials_router)
 app.include_router(jobs_router)
 app.include_router(upload_router)
 

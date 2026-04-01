@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getJobs, createJob, deleteJob, downloadResults, uploadPlanilha } from '@/lib/api'
-import { LogOut, Plus, Download, Trash2, RefreshCw, Upload } from 'lucide-react'
+import { LogOut, Plus, Download, Trash2, RefreshCw, Upload, Settings } from 'lucide-react'
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   pending:  { label: 'Aguardando', color: 'bg-yellow-100 text-yellow-700' },
@@ -17,7 +17,7 @@ const JOB_TYPES = [
   { value: 'combinada', label: 'Combinada' },
 ]
 
-export default function DashboardPage({ user, onLogout }: { user: any; onLogout: () => void }) {
+export default function DashboardPage({ user, onLogout, onEditCredentials }: { user: any; onLogout: () => void; onEditCredentials?: () => void }) {
   const qc = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [jobType, setJobType] = useState('nome')
@@ -64,9 +64,16 @@ export default function DashboardPage({ user, onLogout }: { user: any; onLogout:
           <h1 className="text-xl font-bold text-gray-900">TJGO CAPFI Cloud</h1>
           <p className="text-sm text-gray-500">Olá, {user?.username}</p>
         </div>
-        <button onClick={onLogout} className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900">
-          <LogOut className="h-4 w-4" /> Sair
-        </button>
+        <div className="flex items-center gap-3">
+          {onEditCredentials && (
+            <button onClick={onEditCredentials} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-lg px-3 py-1.5">
+              <Settings className="h-4 w-4" /> Credenciais PROJUDI
+            </button>
+          )}
+          <button onClick={onLogout} className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900">
+            <LogOut className="h-4 w-4" /> Sair
+          </button>
+        </div>
       </header>
 
       <main className="max-w-5xl mx-auto p-6 space-y-6">

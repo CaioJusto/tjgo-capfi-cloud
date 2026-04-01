@@ -23,3 +23,4 @@ class User(Base):
     )
 
     jobs = relationship("Job", back_populates="user", cascade="all, delete-orphan")
+    projudi_credentials = relationship("ProjudiCredentials", back_populates="user", uselist=False, cascade="all, delete-orphan")

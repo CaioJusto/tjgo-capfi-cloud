@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     projudi_submit_selector: str = 'button[type="submit"], input[type="submit"], #btnEntrar'
 
     cors_allow_origins: list[str] = ["*"]
-    cors_allow_methods: list[str] = ["*"]
+    cors_allow_methods: list[str] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     cors_allow_headers: list[str] = ["*"]
 
     upload_dir: Path = Path("/tmp/uploads")
