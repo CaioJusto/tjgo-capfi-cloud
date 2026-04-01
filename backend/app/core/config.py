@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     app_name: str = "TJGO CAPFI Cloud"
     api_v1_prefix: str = ""
     debug: bool = False
-    database_url: str = Field(..., alias="DATABASE_URL")
+    database_url: str = Field(default="sqlite+aiosqlite:////tmp/tjgo_capfi_cloud.db", alias="DATABASE_URL")
     secret_key: str = Field(..., alias="SECRET_KEY")
     access_token_expire_days: int = 7
     algorithm: str = "HS256"
