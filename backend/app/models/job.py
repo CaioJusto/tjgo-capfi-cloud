@@ -20,6 +20,7 @@ class JobType(str, Enum):
 class JobStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
+    PAUSED = "paused"
     DONE = "done"
     FAILED = "failed"
     CANCELED = "canceled"
@@ -42,6 +43,7 @@ class Job(Base):
     total_items: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     processed_items: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_message: Mapped[str | None] = mapped_column(String(2000))
+    logs: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
