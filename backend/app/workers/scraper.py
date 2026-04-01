@@ -70,7 +70,7 @@ def _execute_scraping(job_id: int) -> None:
                 if not asyncio.run(_wait_if_paused_or_canceled(job_id)):
                     return
                 asyncio.run(_append_job_log(job_id, f"🔎 Consultando processo {idx}/{len(processos)}: {process_number}"))
-                batch = _search_process(sb, process_number=process_number)
+                batch = _search_process(sb, process_number=process_number, job_id=job_id)
                 asyncio.run(_append_scraped_batch(job_id, batch))
         elif job_type == JobType.SERVENTIA.value:
             if not asyncio.run(_wait_if_paused_or_canceled(job_id)):
@@ -178,6 +178,7 @@ def _search_process(
     serventia_id: str | None = None,
     serventia_nome: str | None = None,
     pagina_inicial: int = 1,
+    job_id: int | None = None,
 ) -> list[dict[str, Any]]:
     sb.wait_for_ready_state_complete()
 
@@ -208,9 +209,9 @@ def _search_process(
 
     # Busca por número de processo é pontual; demais modos podem ter múltiplas páginas
     if process_number:
-        return _extract_results_from_page(sb, process_number, nome, cpf, serventia_nome)
+        return _extract_results_from_page(sb, process_number, nome, cpf, serventia_nome, job_id)
 
-    return _extract_paginated_results(sb, nome, cpf, serventia_nome, pagina_inicial)
+    return _extract_paginated_results(sb, nome, cpf, serventia_nome, pagina_inicial, job_id)
 
 
 def _fill_process_number_if_available(sb: Any, process_number: str) -> None:
@@ -233,25 +234,43 @@ def _extract_paginated_results(
     cpf: str | None,
     serventia_nome: str | None,
     pagina_inicial: int,
+    job_id: int | None = None,
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
 
     try:
-        total_text = sb.execute_script("""
+        debug_info = sb.execute_script("""
             return (function(){
-                var match = document.body.textContent.match(/Total de:\\s*([\\d.]+)/);
-                return match ? match[1] : '0';
+                var body = document.body ? document.body.textContent : '';
+                var totalMatch = body.match(/Total de:\\s*([\\d.]+)/);
+                return {
+                    title: document.title || '',
+                    totalText: totalMatch ? totalMatch[1] : '0',
+                    hasPaginationInput: !!document.querySelector('input[name="PosicaoPaginaAtual"]'),
+                    hasPaginationIr: document.querySelectorAll('.Paginacao input[value="Ir"]').length,
+                    tableRows: document.querySelectorAll('table tbody tr').length,
+                    bodySnippet: body.replace(/\\s+/g, ' ').slice(0, 800)
+                }
             })()
         """)
-        total_processos = int(str(total_text).replace('.', '') or '0')
-    except Exception:
+        total_processos = int(str(debug_info.get('totalText', '0')).replace('.', '') or '0')
+        if job_id is not None:
+            asyncio.run(_append_job_log(job_id, f"🧪 Debug página inicial: title='{debug_info.get('title','')}' | rows={debug_info.get('tableRows',0)} | pagInput={debug_info.get('hasPaginationInput')} | btnIr={debug_info.get('hasPaginationIr') or 0}"))
+            asyncio.run(_append_job_log(job_id, f"🧾 Trecho da página: {debug_info.get('bodySnippet','')[:300]}"))
+    except Exception as exc:
         total_processos = 0
+        if job_id is not None:
+            asyncio.run(_append_job_log(job_id, f"⚠️ Falha lendo metadados da paginação: {str(exc)[:300]}"))
 
     processos_por_pagina = 15
     total_paginas = max(1, (total_processos + processos_por_pagina - 1) // processos_por_pagina) if total_processos else 1
+    if job_id is not None:
+        asyncio.run(_append_job_log(job_id, f"📊 Total identificado: {total_processos} processo(s) em {total_paginas} página(s)."))
 
     if pagina_inicial > 1:
         try:
+            if job_id is not None:
+                asyncio.run(_append_job_log(job_id, f"⏩ Pulando para a página inicial {pagina_inicial}."))
             sb.execute_script(f"""
                 var input = document.querySelector('input[name="PosicaoPaginaAtual"]');
                 if(input) input.value = '{pagina_inicial - 1}';
@@ -264,7 +283,9 @@ def _extract_paginated_results(
 
     pagina_atual = max(1, pagina_inicial)
     while pagina_atual <= total_paginas:
-        page_records = _extract_results_from_page(sb, None, nome, cpf, serventia_nome)
+        page_records = _extract_results_from_page(sb, None, nome, cpf, serventia_nome, job_id)
+        if job_id is not None:
+            asyncio.run(_append_job_log(job_id, f"📄 Página {pagina_atual}/{total_paginas}: {len(page_records)} registro(s) capturado(s)."))
         if page_records:
             results.extend(page_records)
 
@@ -272,6 +293,8 @@ def _extract_paginated_results(
             break
 
         try:
+            if job_id is not None:
+                asyncio.run(_append_job_log(job_id, f"➡️ Navegando para a próxima página ({pagina_atual + 1}/{total_paginas})..."))
             sb.execute_script(f"""
                 var input = document.querySelector('input[name="PosicaoPaginaAtual"]');
                 if(input) input.value = '{pagina_atual}';
@@ -279,7 +302,9 @@ def _extract_paginated_results(
                 if(btns.length > 0) btns[0].click();
             """)
             sb.sleep(2)
-        except Exception:
+        except Exception as exc:
+            if job_id is not None:
+                asyncio.run(_append_job_log(job_id, f"⚠️ Erro ao tentar navegar paginação: {str(exc)[:300]}"))
             break
 
         pagina_atual += 1
@@ -293,11 +318,18 @@ def _extract_results_from_page(
     nome: str | None,
     cpf: str | None,
     serventia_nome: str | None,
+    job_id: int | None = None,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     page_source = sb.get_page_source()
 
     table_rows = sb.driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
+    if not table_rows and job_id is not None:
+        try:
+            snippet = page_source[:500].replace('\n', ' ').replace('\r', ' ')
+            asyncio.run(_append_job_log(job_id, f"⚠️ Nenhuma linha de tabela encontrada na página atual. Snippet: {snippet}"))
+        except Exception:
+            pass
     for row in table_rows:
         cells = row.find_elements(By.CSS_SELECTOR, "td")
         texts = [cell.text.strip() for cell in cells if cell.text.strip()]
