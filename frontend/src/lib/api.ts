@@ -42,6 +42,8 @@ export const saveCredentials = (projudi_username: string, projudi_password: stri
 export const createJob = (data: any) => api.post('/jobs', data).then(r => r.data)
 export const getJobs = (page = 1) => api.get(`/jobs?page=${page}`).then(r => r.data)
 export const getJob = (id: number) => api.get(`/jobs/${id}`).then(r => r.data)
+export const pauseJob = (id: number) => api.post(`/jobs/${id}/pause`).then(r => r.data)
+export const resumeJob = (id: number) => api.post(`/jobs/${id}/resume`).then(r => r.data)
 export const deleteJob = (id: number) => api.delete(`/jobs/${id}`).then(r => r.data)
 export const downloadResults = (id: number) =>
   api.get(`/jobs/${id}/download`, { responseType: 'blob' }).then(r => r.data)

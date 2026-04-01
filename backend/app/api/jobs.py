@@ -49,6 +49,7 @@ async def create_job(
         params=params,
         total_items=total_items,
         processed_items=0,
+        logs=["🆕 Job criado e aguardando execução."],
     )
     db.add(job)
     await db.commit()
@@ -92,6 +93,40 @@ async def get_job(
     return JobRead.model_validate(job)
 
 
+@router.post("/{job_id}/pause", response_model=JobRead)
+async def pause_job(
+    job_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> JobRead:
+    job = await _get_owned_job(job_id, current_user.id, db)
+    if job.status != JobStatus.RUNNING:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only running jobs can be paused")
+    job.status = JobStatus.PAUSED
+    job.logs = [*(job.logs or []), "⏸️ Job pausado pelo usuário."]
+    await db.commit()
+    await db.refresh(job)
+    return JobRead.model_validate(job)
+
+
+@router.post("/{job_id}/resume", response_model=JobRead)
+async def resume_job(
+    job_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> JobRead:
+    job = await _get_owned_job(job_id, current_user.id, db)
+    if job.status != JobStatus.PAUSED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only paused jobs can be resumed")
+    job.status = JobStatus.RUNNING
+    job.logs = [*(job.logs or []), "▶️ Job retomado pelo usuário."]
+    await db.commit()
+    await db.refresh(job)
+    enqueue_job(background_tasks, job.id)
+    return JobRead.model_validate(job)
+
+
 @router.delete("/{job_id}", response_model=JobRead)
 async def cancel_job(
     job_id: int,
@@ -99,9 +134,10 @@ async def cancel_job(
     current_user: User = Depends(get_current_user),
 ) -> JobRead:
     job = await _get_owned_job(job_id, current_user.id, db)
-    if job.status != JobStatus.PENDING:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only pending jobs can be canceled")
+    if job.status in {JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELED}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job can no longer be canceled")
     job.status = JobStatus.CANCELED
+    job.logs = [*(job.logs or []), "🛑 Job cancelado pelo usuário."]
     await db.commit()
     await db.refresh(job)
     return JobRead.model_validate(job)

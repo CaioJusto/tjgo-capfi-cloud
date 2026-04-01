@@ -66,6 +66,7 @@ class JobRead(BaseModel):
     total_items: int
     processed_items: int
     error_message: str | None
+    logs: list[str]
     created_at: datetime
     updated_at: datetime
 

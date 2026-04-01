@@ -33,14 +33,17 @@ async def run_scraper_job(job_id: int) -> None:
             return
         if job.status == JobStatus.CANCELED:
             return
+        if job.status == JobStatus.PAUSED:
+            return
 
         job.status = JobStatus.RUNNING
         job.error_message = None
         job.result_file_path = None
-        job.processed_items = 0
-        if job.job_type != JobType.PLANILHA:
-            job.total_items = 0
-        await session.execute(delete(ProcessRecord).where(ProcessRecord.job_id == job_id))
+        job.logs = [*(job.logs or []), f"🚀 Iniciando job #{job_id} ({job.job_type.value})"]
+        if job.processed_items == 0:
+            if job.job_type != JobType.PLANILHA:
+                job.total_items = 0
+            await session.execute(delete(ProcessRecord).where(ProcessRecord.job_id == job_id))
         await session.commit()
 
     try:
@@ -54,15 +57,25 @@ async def run_scraper_job(job_id: int) -> None:
 def _execute_scraping(job_id: int) -> None:
     from seleniumbase import SB
 
-    with SB(uc=True, headless=True, test=False, locale_code="pt") as sb:
+    asyncio.run(_append_job_log(job_id, "🔐 Abrindo PROJUDI e autenticando..."))
+    with SB(browser="chrome", headless=True, test=False, locale_code="pt") as sb:
         _open_and_login(sb)
+        asyncio.run(_append_job_log(job_id, "✅ Login no PROJUDI concluído."))
         job_params, job_type = asyncio.run(_get_job_snapshot(job_id))
 
         if job_type == JobType.PLANILHA.value:
-            for process_number in job_params["processes"]:
+            processos = job_params["processes"]
+            asyncio.run(_append_job_log(job_id, f"📚 Busca por planilha iniciada com {len(processos)} processo(s)."))
+            for idx, process_number in enumerate(processos, start=1):
+                if not asyncio.run(_wait_if_paused_or_canceled(job_id)):
+                    return
+                asyncio.run(_append_job_log(job_id, f"🔎 Consultando processo {idx}/{len(processos)}: {process_number}"))
                 batch = _search_process(sb, process_number=process_number)
                 asyncio.run(_append_scraped_batch(job_id, batch))
         elif job_type == JobType.SERVENTIA.value:
+            if not asyncio.run(_wait_if_paused_or_canceled(job_id)):
+                return
+            asyncio.run(_append_job_log(job_id, f"🏛️ Busca por serventia iniciada: {job_params.get('serventia_nome') or job_params.get('serventia_id')} (página {job_params.get('pagina_inicial', 1)})"))
             batch = _search_process(
                 sb,
                 serventia_id=job_params["serventia_id"],
@@ -70,14 +83,20 @@ def _execute_scraping(job_id: int) -> None:
             )
             asyncio.run(_append_scraped_batch(job_id, batch))
         elif job_type == JobType.NOME.value:
+            if not asyncio.run(_wait_if_paused_or_canceled(job_id)):
+                return
+            asyncio.run(_append_job_log(job_id, f"👤 Busca por nome iniciada: {job_params['nome']} (página {job_params.get('pagina_inicial', 1)})"))
             batch = _search_process(sb, nome=job_params["nome"], cpf=job_params.get("cpf"))
             asyncio.run(_append_scraped_batch(job_id, batch))
         elif job_type == JobType.COMBINADA.value:
+            if not asyncio.run(_wait_if_paused_or_canceled(job_id)):
+                return
+            asyncio.run(_append_job_log(job_id, f"🧩 Busca combinada iniciada: nome={job_params['nome']} | serventia={job_params.get('serventia_nome') or job_params.get('serventia_id') or 'todas'} | página {job_params.get('pagina_inicial', 1)}"))
             batch = _search_process(
                 sb,
                 nome=job_params["nome"],
                 cpf=job_params.get("cpf"),
-                serventia_id=job_params["serventia_id"],
+                serventia_id=job_params.get("serventia_id"),
                 serventia_nome=job_params.get("serventia_nome"),
             )
             asyncio.run(_append_scraped_batch(job_id, batch))
@@ -93,10 +112,32 @@ async def _get_job_snapshot(job_id: int) -> tuple[dict[str, Any], str]:
         return job.params, job.job_type.value
 
 
+async def _append_job_log(job_id: int, message: str) -> None:
+    async with AsyncSessionLocal() as session:
+        job = await session.get(Job, job_id)
+        if job is None:
+            return
+        job.logs = [*(job.logs or []), message][-200:]
+        await session.commit()
+
+
+async def _wait_if_paused_or_canceled(job_id: int) -> bool:
+    while True:
+        async with AsyncSessionLocal() as session:
+            job = await session.get(Job, job_id)
+            if job is None:
+                return False
+            if job.status == JobStatus.CANCELED:
+                return False
+            if job.status != JobStatus.PAUSED:
+                return True
+        await asyncio.sleep(2)
+
+
 async def _append_scraped_batch(job_id: int, scraped_items: list[dict[str, Any]]) -> None:
     async with AsyncSessionLocal() as session:
         job = await session.get(Job, job_id)
-        if job is None or job.status == JobStatus.CANCELED:
+        if job is None or job.status in {JobStatus.CANCELED, JobStatus.PAUSED}:
             return
 
         for item in scraped_items:
@@ -106,6 +147,7 @@ async def _append_scraped_batch(job_id: int, scraped_items: list[dict[str, Any]]
             job.processed_items += len(scraped_items)
             if job.total_items < job.processed_items:
                 job.total_items = job.processed_items
+            job.logs = [*(job.logs or []), f"📄 {len(scraped_items)} resultado(s) adicionados. Total processado: {job.processed_items}"][-200:]
 
         await session.commit()
 
@@ -260,7 +302,7 @@ def _is_selector_present(sb: Any, selector: str) -> bool:
 async def _persist_job_success(job_id: int, result_dir: Path) -> None:
     async with AsyncSessionLocal() as session:
         job = await session.get(Job, job_id)
-        if job is None or job.status == JobStatus.CANCELED:
+        if job is None or job.status in {JobStatus.CANCELED, JobStatus.PAUSED}:
             return
 
         result = await session.execute(
@@ -272,6 +314,7 @@ async def _persist_job_success(job_id: int, result_dir: Path) -> None:
         file_path = export_process_records(records, result_dir / f"{job_id}.xlsx")
         job.result_file_path = str(file_path)
         job.status = JobStatus.DONE
+        job.logs = [*(job.logs or []), f"✅ Job concluído. Planilha gerada com {len(records)} registro(s)."][-200:]
         await session.commit()
 
 
@@ -280,6 +323,9 @@ async def _persist_job_failure(job_id: int, error_message: str) -> None:
         job = await session.get(Job, job_id)
         if job is None:
             return
+        if job.status == JobStatus.CANCELED:
+            return
         job.status = JobStatus.FAILED
         job.error_message = error_message[:2000]
+        job.logs = [*(job.logs or []), f"❌ Falha no job: {error_message[:300]}"][-200:]
         await session.commit()
