@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm install && npm run build"
+
+[deploy]
+startCommand = "npx serve dist -l $PORT --no-clipboard"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
